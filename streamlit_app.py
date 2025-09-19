@@ -76,6 +76,30 @@ st.markdown(
         height: 3rem !important;
         object-fit: contain !important;
       }
+      /* Tighten default Streamlit spacing to remove large gap under header */
+      [data-testid="stAppViewContainer"] .main .block-container {
+        padding-top: 0 !important;
+        padding-bottom: 0.5rem !important;
+      }
+      [data-testid="stAppViewContainer"] .main .block-container > div { 
+        margin-top: 0.25rem !important;
+      }
+      /* Remove first-child margin/padding to kill blank space before first chat message */
+      [data-testid="stAppViewContainer"] .main .block-container > *:first-child {
+        margin-top: 0 !important;
+        padding-top: 0 !important;
+      }
+      /* Reduce vertical margins around chat messages */
+      [data-testid="stChatMessage"] {
+        margin-top: 0.25rem !important;
+        margin-bottom: 0.5rem !important;
+      }
+      [data-testid="stChatMessageSet"] {
+        margin-top: 0 !important;
+        row-gap: 0.5rem !important;
+      }
+      /* Remove extra margin below our header section */
+      .app-header { margin-bottom: 6px !important; }
     </style>
     """,
     unsafe_allow_html=True,
@@ -144,28 +168,6 @@ if USE_CHAT:
     # Render existing conversation
     # Assistant avatar uses padded Engro logo to avoid cropping
     assistant_avatar = get_assistant_avatar()
-    # Inline style injection to ensure avatar sizing overrides runtime styles
-    try:
-        from streamlit.components.v1 import html as components_html
-        components_html(
-            """
-            <style>
-              [data-testid='stChatMessage'] [data-testid='stChatMessageAvatar'],
-              [data-testid='stChatMessage'] [data-testid='stChatMessageAvatar'] > *,
-              [data-testid='stChatMessage'] img {
-                width: 3rem !important;
-                height: 3rem !important;
-                min-width: 3rem !important;
-                min-height: 3rem !important;
-                object-fit: contain !important;
-                flex-shrink: 0 !important;
-              }
-            </style>
-            """,
-            height=0,
-        )
-    except Exception:
-        pass
     for turn in st.session_state.qna_log:
         with st.chat_message("user"):
             st.markdown(turn.get("query", ""))
@@ -356,5 +358,4 @@ else:
             "analytics": analytics,
         })
 
-# Footer (generic)
-st.markdown("\n\n— EPCL Data Analyst")
+# Footer removed to avoid extra bottom spacing
