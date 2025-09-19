@@ -358,8 +358,10 @@ hazard_synth_prompt = ChatPromptTemplate.from_messages(
             "Follow this exact structure and order using Markdown headings:\n\n"
             "### Summary\n"
             "2-4 sentences in plain language that directly answer the question and give practical, prescriptive guidance.\n\n"
+            "### Context overview\n"
+            "Briefly describe what information was retrieved (which sheets and how many items), and call out notable IDs; use inline citations like [Sheet:ID].\n\n"
             "### Data insights\n"
-            "3-6 concise bullets highlighting key trends/metrics from analytics and retrieved context. Keep wording simple.\n\n"
+            "3-6 concise bullets highlighting key trends/metrics from analytics and retrieved context; include inline [Sheet:ID] citations for each bullet. Keep wording simple.\n\n"
             "### Details\n"
             "A short ranked list of top hazard themes with 1-sentence 'why it matters' for each.\n\n"
             "### Actions\n"
@@ -371,6 +373,7 @@ hazard_synth_prompt = ChatPromptTemplate.from_messages(
             "human",
             "User question: {query}\n\n"
             "Filters: {filters}\n\n"
+            "Context profile: {context_profile}\n\n"
             "Top hazards (JSON): {analytics}\n\n"
             "Retrieved snippets (for context):\n{snippets}",
         ),
@@ -386,8 +389,10 @@ general_qa_prompt = ChatPromptTemplate.from_messages(
             "Write for non-experts and follow this exact structure and order using Markdown headings:\n\n"
             "### Summary\n"
             "2-4 sentences in simple language that directly answer the question and, when appropriate, give prescriptive guidance.\n\n"
+            "### Context overview\n"
+            "Briefly describe what information was retrieved (which sheets and how many items), and call out notable IDs; use inline citations like [Sheet:ID].\n\n"
             "### Data insights\n"
-            "3-6 short bullets with the most relevant facts from the context (numbers, trends, locations, dates).\n\n"
+            "3-6 short bullets with the most relevant facts from the context (numbers, trends, locations, dates); include inline [Sheet:ID] citations for each bullet.\n\n"
             "### Details\n"
             "Any additional clarifications or steps as bullets.\n\n"
             "### Citations\n"
@@ -395,7 +400,7 @@ general_qa_prompt = ChatPromptTemplate.from_messages(
         ),
         (
             "human",
-            "Question: {query}\n\nFilters: {filters}\n\nRetrieved snippets:\n{snippets}",
+            "Question: {query}\n\nFilters: {filters}\n\nContext profile: {context_profile}\n\nRetrieved snippets:\n{snippets}",
         ),
     ]
 )
@@ -404,12 +409,28 @@ general_qa_prompt = ChatPromptTemplate.from_messages(
 def synthesize_answer(state: GraphState) -> GraphState:
     # Build small snippet list + citations
     snippets: List[str] = []
-    for d in state.get("retrieved", [])[:5]:
+    retrieved_docs = state.get("retrieved", [])
+    for d in retrieved_docs[:5]:
         meta = d.metadata or {}
         cid = meta.get("record_id") or ""
         src = meta.get("source_sheet") or ""
         content = (d.page_content or "")[:350].replace("\n", " ")
         snippets.append(f"[{src}:{cid}] {content}")
+
+    # Build a lightweight profile of the retrieved context for clearer descriptions
+    from collections import Counter
+    sheet_counts = Counter()
+    ids: List[str] = []
+    for d in retrieved_docs:
+        md = d.metadata or {}
+        sheet = md.get("source_sheet") or "Unknown"
+        sheet_counts[sheet] += 1
+        rid = md.get("record_id")
+        if rid:
+            ids.append(f"{sheet}:{rid}")
+    counts_str = ", ".join(f"{k}={v}" for k, v in sheet_counts.items()) or "none"
+    ids_str = ", ".join(ids[:10]) or "none"
+    context_profile = f"total={len(retrieved_docs)}; by_sheet={counts_str}; ids={ids_str}"
 
     q = state.get("query", "")
     if is_hazard_query(q):
@@ -417,12 +438,14 @@ def synthesize_answer(state: GraphState) -> GraphState:
             query=q,
             filters=state.get("filters", {}),
             analytics=state.get("analytics", {}),
+            context_profile=context_profile,
             snippets="\n".join(snippets),
         )
     else:
         messages = general_qa_prompt.format_messages(
             query=q,
             filters=state.get("filters", {}),
+            context_profile=context_profile,
             snippets="\n".join(snippets),
         )
     resp = LLM.invoke(messages)

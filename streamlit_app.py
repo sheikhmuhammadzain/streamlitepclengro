@@ -16,6 +16,10 @@ os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 
 import streamlit as st
 import pandas as pd
+try:
+    from PIL import Image
+except Exception:
+    Image = None
 
 # Import the compiled LangGraph app from bot.py
 from bot import app as graph_app, is_hazard_query
@@ -32,6 +36,46 @@ st.markdown(
       .muted { color: #587a66; }
       .card { background: #FFFFFF; border: 1px solid #e7efe9; border-radius: 12px; padding: 14px 16px; margin-top: 10px; }
       .section-title { margin: 6px 0 6px; font-weight: 700; color: #0B1A12; }
+      /* Sidebar inputs - lighter borders */
+      [data-testid="stSidebar"] .stTextInput input,
+      [data-testid="stSidebar"] .stDateInput input,
+      [data-testid="stSidebar"] .stTextArea textarea {
+        border: 1px solid #e5ece8 !important;
+        background: #fbfdfb !important;
+        border-radius: 10px !important;
+      }
+      /* Chat avatars: consistent size (3rem), transparent background, don't crop */
+      [data-testid="stChatMessageAvatar"] {
+        width: 3rem !important;
+        height: 3rem !important;
+        display: flex; align-items: center; justify-content: center;
+      }
+      [data-testid="stChatMessageAvatar"] img {
+        width: 3rem !important;
+        height: 3rem !important;
+        object-fit: contain !important;
+        background: transparent !important;
+      }
+      /* Stronger override: target avatar and its direct children inside chat message */
+      [data-testid="stChatMessage"] [data-testid="stChatMessageAvatar"],
+      [data-testid="stChatMessage"] [data-testid="stChatMessageAvatar"] > img,
+      [data-testid="stChatMessage"] [data-testid="stChatMessageAvatar"] > span,
+      [data-testid="stChatMessage"] [data-testid="stChatMessageAvatar"] > div {
+        width: 3rem !important;
+        height: 3rem !important;
+        min-width: 3rem !important;
+        min-height: 3rem !important;
+        max-width: 3rem !important;
+        max-height: 3rem !important;
+        object-fit: contain !important;
+        flex-shrink: 0 !important;
+      }
+      /* Generic fallback: any image inside a chat message */
+      [data-testid="stChatMessage"] img {
+        width: 3rem !important;
+        height: 3rem !important;
+        object-fit: contain !important;
+      }
     </style>
     """,
     unsafe_allow_html=True,
@@ -42,7 +86,7 @@ LOGO_PATH = "svglogo.svg"
 header_cols = st.columns([1, 9])
 logo_file = Path(LOGO_PATH)
 if logo_file.exists():
-    header_cols[0].image(LOGO_PATH, caption="Engro Chemicals", width=64)
+    header_cols[0].image(LOGO_PATH, caption="Engro Chemicals", width=65)
 else:
     header_cols[0].markdown(":seedling:")
 header_cols[1].markdown("""
@@ -53,6 +97,14 @@ header_cols[1].markdown("""
   </div>
 </div>
 """, unsafe_allow_html=True)
+
+# Choose the assistant avatar (prefer SVG logo) and keep it transparent
+def get_assistant_avatar():
+    if "assistant_avatar" in st.session_state:
+        return st.session_state.assistant_avatar
+    avatar = LOGO_PATH if Path(LOGO_PATH).exists() else ("logo.png" if Path("logo.png").exists() else "💼")
+    st.session_state.assistant_avatar = avatar
+    return avatar
 
 # Session-scoped thread for checkpointer/memory continuity
 if "thread_id" not in st.session_state:
@@ -85,119 +137,58 @@ with st.sidebar:
             del st.session_state["chat_history"]
         st.rerun()
 
-# Main input
-default_q = (
-    "What are the most concerned hazards and what steps should we take to avoid it turning into an incident?"
-)
-question = st.text_area("Question", value=default_q, height=100)
+_ = "Chat-like interface using Streamlit chat elements"
+USE_CHAT = hasattr(st, "chat_message") and hasattr(st, "chat_input")
 
-ask = st.button("Ask", type="primary")
+if USE_CHAT:
+    # Render existing conversation
+    # Assistant avatar uses padded Engro logo to avoid cropping
+    assistant_avatar = get_assistant_avatar()
+    # Inline style injection to ensure avatar sizing overrides runtime styles
+    try:
+        from streamlit.components.v1 import html as components_html
+        components_html(
+            """
+            <style>
+              [data-testid='stChatMessage'] [data-testid='stChatMessageAvatar'],
+              [data-testid='stChatMessage'] [data-testid='stChatMessageAvatar'] > *,
+              [data-testid='stChatMessage'] img {
+                width: 3rem !important;
+                height: 3rem !important;
+                min-width: 3rem !important;
+                min-height: 3rem !important;
+                object-fit: contain !important;
+                flex-shrink: 0 !important;
+              }
+            </style>
+            """,
+            height=0,
+        )
+    except Exception:
+        pass
+    for turn in st.session_state.qna_log:
+        with st.chat_message("user"):
+            st.markdown(turn.get("query", ""))
+        with st.chat_message("assistant", avatar=assistant_avatar):
+            if turn.get("context_included"):
+                st.caption("Context included")
+            st.markdown(turn.get("answer", ""))
+            rows = turn.get("chunks") or []
+            if rows:
+                with st.expander("Thoughts "):
+                    st.dataframe(pd.DataFrame(rows), use_container_width=True)
+                    st.markdown("Snippets:")
+                    for r in rows[:10]:
+                        st.markdown(f"- **[{r['source']}:{r['id']}]** (score={r['score']}) {r['preview']}")
 
-if ask:
-    if not os.environ.get("OPENAI_API_KEY"):
-        st.error("OPENAI_API_KEY is not set. Please set it in your environment and restart.")
-        st.stop()
+    # Bottom chat input
+    prompt = st.chat_input("Ask a question")
+    if prompt:
+        if not os.environ.get("OPENAI_API_KEY"):
+            st.error("OPENAI_API_KEY is not set. Please set it in your environment and restart.")
+            st.stop()
 
-    # Build filters dict compactly
-    filters: Dict[str, Any] = {}
-    if location:
-        filters["location"] = location
-    if department:
-        filters["department"] = department
-    if isinstance(start_dt, date):
-        filters["start_date"] = start_dt.isoformat()
-    if isinstance(end_dt, date):
-        filters["end_date"] = end_dt.isoformat()
-
-    state = {
-        "query": question,
-        "filters": filters,
-        "retrieved": [],
-        "analytics": {},
-        "answer": "",
-    }
-    config = {"configurable": {"thread_id": st.session_state.thread_id}}
-
-    ai_ok = False
-    error_msg = None
-    with st.spinner("Thinking..."):
-        try:
-            final = graph_app.invoke(state, config=config)
-            ai_ok = True
-        except Exception as e:
-            final = {}
-            ai_ok = False
-            error_msg = str(e)
-
-    answer = final.get("answer", "")
-    analytics = final.get("analytics", {}) or {}
-    top: List[Dict[str, Any]] = analytics.get("top", []) if isinstance(analytics, dict) else []
-
-    # Run status block (generic labels, no vendor names)
-    st.subheader("Run Status")
-    cols = st.columns(3)
-    with cols[0]:
-        if os.environ.get("OPENAI_API_KEY"):
-            st.success("Service Key: Present")
-        else:
-            st.error("Service Key: Missing")
-    with cols[1]:
-        if ai_ok:
-            st.success("AI Response: Generated")
-        else:
-            st.error("AI Response: Failed")
-            if error_msg:
-                st.caption(error_msg[:300])
-    with cols[2]:
-        st.info(f"Retrieved Chunks: {len(final.get('retrieved', []))}")
-
-    # Build rows for retrieved chunks for logging
-    retrieved = final.get("retrieved", [])
-    rows = []
-    for d in retrieved[:12]:
-        meta = getattr(d, "metadata", {}) or {}
-        cid = meta.get("record_id") or ""
-        src = meta.get("source_sheet") or ""
-        score = meta.get("score")
-        content = (getattr(d, "page_content", "") or "")[:220].replace("\n", " ")
-        rows.append({
-            "source": src,
-            "id": cid,
-            "score": score,
-            "preview": content,
-        })
-
-    # Append to history log (we will render the latest section below)
-    st.session_state.qna_log.append({
-        "query": question,
-        "answer": answer,
-        "chunks": rows,
-    })
-
-# --- Render Latest result and Follow-up input (outside Ask block) ---
-if st.session_state.qna_log:
-    latest = st.session_state.qna_log[-1]
-    st.subheader("Answer")
-    if latest.get("context_included"):
-        st.caption("Context included")
-    st.markdown(latest.get("answer", ""))
-
-    latest_rows = latest.get("chunks") or []
-    if latest_rows:
-        with st.expander("Retrieved chunks"):
-            st.dataframe(pd.DataFrame(latest_rows), use_container_width=True)
-            st.markdown("---")
-            st.markdown("Snippets:")
-            for r in latest_rows:
-                st.markdown(f"- **[{r['source']}:{r['id']}]** (score={r['score']}) {r['preview']}")
-
-    st.markdown("---")
-    st.subheader("Ask a follow-up")
-    followup = st.text_area("", value="", height=80, key="followup_input")
-    ask_followup = st.button("Ask follow-up", type="primary", key="ask_followup_btn")
-
-    if ask_followup and followup.strip():
-        # Build filters dict compactly (reuse sidebar values)
+        # Build filters dict from sidebar
         filters: Dict[str, Any] = {}
         if location:
             filters["location"] = location
@@ -208,15 +199,18 @@ if st.session_state.qna_log:
         if isinstance(end_dt, date):
             filters["end_date"] = end_dt.isoformat()
 
-        # Compose contextual query with last few turns
-        context_turns = st.session_state.qna_log[-3:]
-        context_block = "\n\n".join([
-            f"Q: {t.get('query','')}\nA: {t.get('answer','')}" for t in context_turns
-        ])
-        composite_query = f"Context:\n{context_block}\n\nFollow-up question: {followup}"
+        # Create contextual query using last few turns if available
+        context_included = bool(st.session_state.qna_log)
+        query_to_send = prompt
+        if context_included:
+            context_turns = st.session_state.qna_log[-3:]
+            context_block = "\n\n".join([
+                f"Q: {t.get('query','')}\nA: {t.get('answer','')}" for t in context_turns
+            ])
+            query_to_send = f"Context:\n{context_block}\n\nQuestion: {prompt}"
 
         state = {
-            "query": composite_query,
+            "query": query_to_send,
             "filters": filters,
             "retrieved": [],
             "analytics": {},
@@ -224,18 +218,81 @@ if st.session_state.qna_log:
         }
         config = {"configurable": {"thread_id": st.session_state.thread_id}}
 
-        ai_ok = False
-        error_msg = None
+        with st.chat_message("user"):
+            st.markdown(prompt)
+
+        with st.chat_message("assistant", avatar=assistant_avatar):
+            with st.spinner("Thinking..."):
+                try:
+                    final = graph_app.invoke(state, config=config)
+                except Exception as e:
+                    final = {"answer": f"There was an error generating a response: {e}", "retrieved": []}
+
+            answer = final.get("answer", "")
+            retrieved = final.get("retrieved", [])
+            rows = []
+            for d in retrieved[:12]:
+                meta = getattr(d, "metadata", {}) or {}
+                cid = meta.get("record_id") or ""
+                src = meta.get("source_sheet") or ""
+                score = meta.get("score")
+                content = (getattr(d, "page_content", "") or "")[:220].replace("\n", " ")
+                rows.append({
+                    "source": src,
+                    "id": cid,
+                    "score": score,
+                    "preview": content,
+                })
+
+            if context_included:
+                st.caption("Context included")
+            st.markdown(answer or "")
+            if rows:
+                with st.expander("Sources"):
+                    st.dataframe(pd.DataFrame(rows), use_container_width=True)
+                    st.markdown("Snippets:")
+                    for r in rows[:10]:
+                        st.markdown(f"- **[{r['source']}:{r['id']}]** (score={r['score']}) {r['preview']}")
+
+        st.session_state.qna_log.append({
+            "query": prompt,
+            "answer": answer,
+            "chunks": rows,
+            "context_included": context_included,
+        })
+else:
+    # Fallback simple input for older Streamlit versions
+    default_q = (
+        "What are the most concerned hazards and what steps should we take to avoid it turning into an incident?"
+    )
+    question = st.text_area("Question", value=default_q, height=100)
+    ask = st.button("Ask", type="primary")
+    if ask:
+        if not os.environ.get("OPENAI_API_KEY"):
+            st.error("OPENAI_API_KEY is not set. Please set it in your environment and restart.")
+            st.stop()
+        filters: Dict[str, Any] = {}
+        if location:
+            filters["location"] = location
+        if department:
+            filters["department"] = department
+        if isinstance(start_dt, date):
+            filters["start_date"] = start_dt.isoformat()
+        if isinstance(end_dt, date):
+            filters["end_date"] = end_dt.isoformat()
+        state = {
+            "query": question,
+            "filters": filters,
+            "retrieved": [],
+            "analytics": {},
+            "answer": "",
+        }
+        config = {"configurable": {"thread_id": st.session_state.thread_id}}
         with st.spinner("Thinking..."):
             try:
                 final = graph_app.invoke(state, config=config)
-                ai_ok = True
             except Exception as e:
-                final = {}
-                ai_ok = False
-                error_msg = str(e)
-
-        # Extract follow-up results before rendering
+                final = {"answer": f"There was an error generating a response: {e}", "retrieved": []}
         answer = final.get("answer", "")
         retrieved = final.get("retrieved", [])
         rows = []
@@ -251,61 +308,11 @@ if st.session_state.qna_log:
                 "score": score,
                 "preview": content,
             })
-
-        # Show run status for follow-up as well
-        st.subheader("Run Status")
-        cols = st.columns(3)
-        with cols[0]:
-            if os.environ.get("OPENAI_API_KEY"):
-                st.success("Service Key: Present")
-            else:
-                st.error("Service Key: Missing")
-        with cols[1]:
-            if ai_ok:
-                st.success("AI Response: Generated")
-            else:
-                st.error("AI Response: Failed")
-                if error_msg:
-                    st.caption(error_msg[:300])
-        with cols[2]:
-            st.info(f"Retrieved Chunks: {len(final.get('retrieved', []))}")
-
-        # Inline display of follow-up answer so users see it immediately here
-        st.markdown("---")
-        st.subheader("Answer")
-        st.caption("Context included")
-        st.markdown(answer or "")
-        if rows:
-            with st.expander("Retrieved chunks"):
-                st.dataframe(pd.DataFrame(rows), use_container_width=True)
-                st.markdown("---")
-                st.markdown("Snippets:")
-                for r in rows:
-                    st.markdown(f"- **[{r['source']}:{r['id']}]** (score={r['score']}) {r['preview']}")
-
         st.session_state.qna_log.append({
-            "query": followup,
+            "query": question,
             "answer": answer,
             "chunks": rows,
-            "context_included": True,
         })
-        # No explicit rerun here so the inline answer stays in view
-
-    # History (older entries only)
-    if len(st.session_state.qna_log) > 1:
-        st.markdown("---")
-        st.subheader("History")
-        for i, entry in enumerate(reversed(st.session_state.qna_log[:-1]), start=1):
-            st.markdown(f"**{i}. Q:** {entry.get('query','')}")
-            with st.expander("Answer"):
-                st.markdown(entry.get("answer", ""))
-            chunks = entry.get("chunks") or []
-            if chunks:
-                with st.expander("Chunks"):
-                    st.dataframe(pd.DataFrame(chunks), use_container_width=True)
-                    st.markdown("Snippets:")
-                    for r in chunks[:10]:
-                        st.markdown(f"- **[{r['source']}:{r['id']}]** (score={r['score']}) {r['preview']}")
 
 # Footer (generic)
 st.markdown("\n\n— EPCL Data Analyst")
