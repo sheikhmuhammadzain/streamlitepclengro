@@ -1,0 +1,11 @@
+[theme]
+base = "light"
+# Primary accent (buttons, sliders, links)
+primaryColor = "#16A34A"          # green-600
+# Backgrounds
+backgroundColor = "#FFFFFF"        # white
+secondaryBackgroundColor = "#F4FBF6" # very light green-tinted background
+# Text
+textColor = "#0B1A12"              # deep green-black for high contrast
+# Optional font
+font = "sans serif"

@@ -1,0 +1,82 @@
+{
+  "processing_date": "2025-09-19 01:01:36",
+  "sheets_processed": 9,
+  "sheets": {
+    "Incident": {
+      "rows_total": 3874,
+      "columns_total": 72,
+      "null_percentage": 63.86,
+      "date_columns": 6,
+      "enrichment_fields": 5,
+      "data_types": {
+        "object": 54,
+        "datetime64[ns]": 8,
+        "float64": 6,
+        "bool": 2,
+        "int64": 2
+      }
+    },
+    "Hazard ID": {
+      "rows_total": 1425,
+      "columns_total": 35,
+      "null_percentage": 21.63,
+      "date_columns": 3,
+      "enrichment_fields": 4,
+      "data_types": {
+        "object": 23,
+        "float64": 6,
+        "datetime64[ns]": 4,
+        "bool": 1,
+        "int64": 1
+      }
+    },
+    "Audit": {
+      "rows_total": 1522,
+      "columns_total": 36,
+      "null_percentage": 20.0,
+      "date_columns": 1,
+      "enrichment_fields": 0,
+      "data_types": {
+        "object": 30,
+        "datetime64[ns]": 5,
+        "int64": 1
+      }
+    },
+    "Audit Findings": {
+      "rows_total": 1031,
+      "columns_total": 34,
+      "null_percentage": 17.18,
+      "date_columns": 1,
+      "enrichment_fields": 0,
+      "data_types": {
+        "object": 28,
+        "datetime64[ns]": 5,
+        "int64": 1
+      }
+    },
+    "Inspection": {
+      "rows_total": 1773,
+      "columns_total": 41,
+      "null_percentage": 30.77,
+      "date_columns": 2,
+      "enrichment_fields": 0,
+      "data_types": {
+        "object": 37,
+        "datetime64[ns]": 3,
+        "int64": 1
+      }
+    },
+    "Inspection Findings": {
+      "rows_total": 3063,
+      "columns_total": 37,
+      "null_percentage": 32.94,
+      "date_columns": 2,
+      "enrichment_fields": 0,
+      "data_types": {
+        "object": 33,
+        "datetime64[ns]": 3,
+        "int64": 1
+      }
+    }
+  }
+}
