@@ -180,6 +180,26 @@ if USE_CHAT:
                     st.markdown("Snippets:")
                     for r in rows[:10]:
                         st.markdown(f"- **[{r['source']}:{r['id']}]** (score={r['score']}) {r['preview']}")
+                # Basic charts from retrieved items
+                with st.expander("Charts"):
+                    df = pd.DataFrame(rows)
+                    if not df.empty:
+                        if "source" in df.columns:
+                            src_counts = df["source"].fillna("Unknown").value_counts()
+                            st.markdown("**Retrieved by source**")
+                            st.bar_chart(src_counts, use_container_width=True)
+                        if "score" in df.columns and df["score"].notna().any():
+                            st.markdown("**Similarity scores**")
+                            st.bar_chart(df["score"].dropna(), use_container_width=True)
+                    # Hazard analytics, if saved with the turn
+                    ana = turn.get("analytics") or {}
+                    top = (ana.get("top") or []) if isinstance(ana, dict) else []
+                    if isinstance(top, list) and top:
+                        hdf = pd.DataFrame(top)
+                        if {"hazard", "concern_score"}.issubset(hdf.columns):
+                            hdf = hdf.sort_values("concern_score", ascending=False)
+                            st.markdown("**Top hazards by concern score**")
+                            st.bar_chart(hdf.set_index("hazard")["concern_score"], use_container_width=True)
 
     # Bottom chat input
     prompt = st.chat_input("Ask a question")
@@ -230,6 +250,7 @@ if USE_CHAT:
 
             answer = final.get("answer", "")
             retrieved = final.get("retrieved", [])
+            analytics = final.get("analytics", {}) or {}
             rows = []
             for d in retrieved[:12]:
                 meta = getattr(d, "metadata", {}) or {}
@@ -253,12 +274,31 @@ if USE_CHAT:
                     st.markdown("Snippets:")
                     for r in rows[:10]:
                         st.markdown(f"- **[{r['source']}:{r['id']}]** (score={r['score']}) {r['preview']}")
+            # Inline charts for this turn
+            with st.expander("Charts"):
+                df = pd.DataFrame(rows)
+                if not df.empty:
+                    if "source" in df.columns:
+                        src_counts = df["source"].fillna("Unknown").value_counts()
+                        st.markdown("**Retrieved by source**")
+                        st.bar_chart(src_counts, use_container_width=True)
+                    if "score" in df.columns and df["score"].notna().any():
+                        st.markdown("**Similarity scores**")
+                        st.bar_chart(df["score"].dropna(), use_container_width=True)
+                top = (analytics.get("top") or []) if isinstance(analytics, dict) else []
+                if isinstance(top, list) and top:
+                    hdf = pd.DataFrame(top)
+                    if {"hazard", "concern_score"}.issubset(hdf.columns):
+                        hdf = hdf.sort_values("concern_score", ascending=False)
+                        st.markdown("**Top hazards by concern score**")
+                        st.bar_chart(hdf.set_index("hazard")["concern_score"], use_container_width=True)
 
         st.session_state.qna_log.append({
             "query": prompt,
             "answer": answer,
             "chunks": rows,
             "context_included": context_included,
+            "analytics": analytics,
         })
 else:
     # Fallback simple input for older Streamlit versions
@@ -295,6 +335,7 @@ else:
                 final = {"answer": f"There was an error generating a response: {e}", "retrieved": []}
         answer = final.get("answer", "")
         retrieved = final.get("retrieved", [])
+        analytics = final.get("analytics", {}) or {}
         rows = []
         for d in retrieved[:12]:
             meta = getattr(d, "metadata", {}) or {}
@@ -312,6 +353,7 @@ else:
             "query": question,
             "answer": answer,
             "chunks": rows,
+            "analytics": analytics,
         })
 
 # Footer (generic)
