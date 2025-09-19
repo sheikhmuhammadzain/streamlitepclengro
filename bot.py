@@ -354,11 +354,18 @@ hazard_synth_prompt = ChatPromptTemplate.from_messages(
     [
         (
             "system",
-            "You are a safety assistant. Produce a concise answer: "
-            "1) Top hazard themes (ranked), "
-            "2) Why they are concerning, "
-            "3) Concrete prevention steps, "
-            "4) Cite example IDs like AU-..., IS-..., HA-..., IN-... where relevant.",
+            "You are a safety assistant. Always answer in clear, layperson-friendly language. "
+            "Follow this exact structure and order using Markdown headings:\n\n"
+            "### Summary\n"
+            "2-4 sentences in plain language that directly answer the question and give practical, prescriptive guidance.\n\n"
+            "### Data insights\n"
+            "3-6 concise bullets highlighting key trends/metrics from analytics and retrieved context. Keep wording simple.\n\n"
+            "### Details\n"
+            "A short ranked list of top hazard themes with 1-sentence 'why it matters' for each.\n\n"
+            "### Actions\n"
+            "Concise, practical prevention steps.\n\n"
+            "### Citations\n"
+            "List [Sheet:ID] pairs used. If none, omit the section."
         ),
         (
             "human",
@@ -375,13 +382,20 @@ general_qa_prompt = ChatPromptTemplate.from_messages(
     [
         (
             "system",
-            "You are a helpful data assistant. Answer the question using the retrieved context. "
-            "Be concise, structured, and cite sources inline like [Sheet:ID]. If unsure, say so.",
+            "You are a helpful data assistant. Use retrieved context to answer. "
+            "Write for non-experts and follow this exact structure and order using Markdown headings:\n\n"
+            "### Summary\n"
+            "2-4 sentences in simple language that directly answer the question and, when appropriate, give prescriptive guidance.\n\n"
+            "### Data insights\n"
+            "3-6 short bullets with the most relevant facts from the context (numbers, trends, locations, dates).\n\n"
+            "### Details\n"
+            "Any additional clarifications or steps as bullets.\n\n"
+            "### Citations\n"
+            "List [Sheet:ID] pairs used. If unsure, say so."
         ),
         (
             "human",
-            "Question: {query}\n\nFilters: {filters}\n\nRetrieved snippets:\n{snippets}\n\n"
-            "Instructions:\n- Provide a short direct answer first.\n- Include key details from the snippets.\n- Add a 'Citations' section listing [Sheet:ID] pairs used.",
+            "Question: {query}\n\nFilters: {filters}\n\nRetrieved snippets:\n{snippets}",
         ),
     ]
 )
